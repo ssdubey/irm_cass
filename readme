@@ -1,0 +1,30 @@
+we have installed libcassandra as a library present inside irmin
+opam install libcassandra
+
+further installing irmin-mem (edited)
+
+running the ml code with utop by copy pasting.
+
+need to fix the dune of libcassandra.
+
+This setup is working in cassandra switch
+
+
+
+-------------------------------------------------
+This dune (below) worked just fine to install libcassandra:
+(rule
+ (deps (source_tree cpp-driver))
+ (targets liblibcassandra_stubs.a dlllibcassandra_stubs.so)
+ (action (progn
+          
+          (copy cpp-driver/libcassandra.so dlllibcassandra_stubs.so)
+          (copy cpp-driver/libcassandra.a liblibcassandra_stubs.a)
+          )))
+(library
+(name libcassandra)
+(public_name libcassandra)
+(self_build_stubs_archive (libcassandra))
+(libraries ctypes posix-types ctypes.foreign))
+
+but it is not working when I am refering libcassandra (generated through this dune) directly through lib (entry in ml dune)

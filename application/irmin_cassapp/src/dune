@@ -1,0 +1,6 @@
+(executable
+ (name cass_ao)
+ (libraries digestif.ocaml irmin irmin-mem lwt.unix))
+ (env
+ (dev
+  (flags (:standard -warn-error -A))))
