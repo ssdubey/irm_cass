@@ -26,6 +26,7 @@ type cassError
 type cassUuid
 type cassUuidGen
 type stubtype
+type cassTuple
 
 external ml_cass_session_new : unit -> cassSession = "cass_session_new"
 external ml_cass_cluster_new : unit -> cassCluster = "cass_cluster_new"
@@ -44,6 +45,10 @@ external ml_cass_future_free : cassFuture -> unit = "cass_future_free"
 external ml_cass_statement_free : cassStatement -> unit = "cass_statement_free"
 external ml_cass_uuid_gen_new : unit -> cassUuidGen = "cass_uuid_gen_new"
 external ml_cass_uuid_gen_free : cassUuidGen -> unit = "cass_uuid_gen_free"
+external ml_cass_statement_new : string -> int -> cassStatement = "cass_statement_new"
+(* external ml_cass_tuple_new : int -> cassTuple = "cass_tuple_new" *)
+external ml_cass_statement_bind_string : cassStatement -> int -> string -> unit = 
+                              "cass_statement_bind_string"
 
 external cstub_convert : int -> int = "convert"
 
@@ -76,7 +81,36 @@ let execute_query sess query =
 
     response
 
-(*  *)
+let cx_stmt session query keyStr valStr =
+  let valCount = cstub_convert 2 in
+
+    let statement = ml_cass_statement_new query valCount in 
+      ml_cass_statement_bind_string statement (cstub_convert 0) keyStr;  (*key and value are converted into string*)
+      ml_cass_statement_bind_string statement (cstub_convert 1) valStr;
+
+    let future = ml_cass_session_execute session statement in
+      ml_cass_future_wait future;
+
+    let rc = ml_cass_future_error_code future in 
+    let response = cstub_match_enum rc future in 
+
+      ml_cass_future_free future;
+      ml_cass_statement_free statement;
+
+
+      (* let valCount = cstub_convert 2 in
+
+    let statement = ml_cass_statement_new query valCount in 
+      ml_cass_statement_bind_string statement (cstub_convert 0) keyStr;  (*key and value are converted into string*)
+      ml_cass_statement_bind_string statement (cstub_convert 1) valStr;
+
+    let future = ml_cass_session_execute t.t statement in
+      ml_cass_future_wait future;
+
+    let rc = ml_cass_future_error_code future in 
+    let response = cstub_match_enum rc future in 
+      ml_cass_future_free future;
+      ml_cass_statement_free statement; *)
 
 module RO (K: Irmin.Contents.Conv) (V: Irmin.Contents.Conv) = struct
 
@@ -127,34 +161,20 @@ module AO (K: Irmin.Hash.S) (V: Irmin.Contents.Conv) = struct
   include RO(K)(V)
 
   let add t value =
-    let cstruct = Irmin.Type.encode_cstruct V.t value in 
-    let str = Cstruct.to_string cstruct in 
-    let str = String.sub str 8 ((String.length str) - 8) in
-    let strList = String.split_on_char ' ' str in
-    let strArr = Array.of_list strList in
-    let empid, name, dept = Array.get strArr 0, Array.get strArr 1, Array.get strArr 2 in 
-  
-
-    (* let uuid_gen = ml_cass_uuid_gen_new () in *)
-    (* let uuid_key = K.digest cassUuidGen uuid_gen in *)
-
-    let key = K.digest V.t value in (*add key to the table in the query*)
-                                    (*if we want to avoid calculating hash, we
-                                    need to write our own hash function*)
-        
     
-    let insquery = "INSERT INTO employee.office (empid, Name, Department) VALUES 
-                  ("
-                   ^ empid 
-                   ^ " , " 
-                   ^ "\'" ^ name ^ "\'" 
-                   ^ " , " 
-                   ^ "\'" ^ dept ^ "\'"  
-                   ^ ")" in
+    let key = K.digest V.t value in 
 
-    let insqueryStatus = execute_query t insquery in   (*changed sess to t*)
+    let keycs = Irmin.Type.encode_cstruct K.t key in 
+    let keyStr = Cstruct.to_string keycs in 
+    let keyStr = String.sub keyStr 8 ((String.length keyStr) - 8) in
+    
+    let valcs = Irmin.Type.encode_cstruct V.t value in 
+    let valStr = Cstruct.to_string valcs in 
+    let valStr = String.sub valStr 8 ((String.length valStr) - 8) in
+ 
+    let query = "INSERT INTO employee.office (key, value) VALUES (?, ?)" in
 
-    (* ml_cass_uuid_gen_free uuid_gen; *)
+      cx_stmt t query keyStr valStr;
 
     Lwt.return key
 
@@ -190,25 +210,32 @@ module RW (K: Irmin.Contents.Conv) (V: Irmin.Contents.Conv) = struct
     |> Lwt.return
 
   let set t key value =
-    let cstruct = Irmin.Type.encode_cstruct V.t value in 
-    let str = Cstruct.to_string cstruct in 
-    print_string str;
-    let value = String.sub str 8 ((String.length str) - 8) in
-    print_string value;
     
-    let cstruct = Irmin.Type.encode_cstruct K.t key in 
-    let str = Cstruct.to_string cstruct in 
-    let key = String.sub str 8 ((String.length str) - 8) in
+    let keycs = Irmin.Type.encode_cstruct K.t key in 
+    let keyStr = Cstruct.to_string keycs in 
+    let keyStr = String.sub keyStr 8 ((String.length keyStr) - 8) in
     
+    let valcs = Irmin.Type.encode_cstruct V.t value in 
+    let valStr = Cstruct.to_string valcs in 
+    let valStr = String.sub valStr 8 ((String.length valStr) - 8) in
+      
+    let query = "INSERT INTO employee.empmap (key, value) VALUES (?, ?)" in
+
+      cx_stmt t.t query keyStr valStr;
+
+    
+      (* response *)
 
 
-    let insquery = "INSERT INTO employee.empmap (key, value) VALUES 
+
+(*insertion with query*)
+    (* let insquery = "INSERT INTO employee.empmap (key, value) VALUES 
                   ("
                    ^ "\'" ^ key ^ "\'" 
                    ^ " , " 
                    ^ "\'" ^ value ^ "\'"  
                    ^ ")" in
-     let insqueryStatus = execute_query t.t insquery in 
+     let insqueryStatus = execute_query t.t insquery in  *)
      
      Lwt.return_unit 
 
