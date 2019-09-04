@@ -1,77 +1,53 @@
-(*
- * Copyright (c) 2013-2017 Thomas Gazagnaire <thomas@gazagnaire.org>
- *
- * Permission to use, copy, modify, and distribute this software for any
- * purpose with or without fee is hereby granted, provided that the above
- * copyright notice and this permission notice appear in all copies.
- *
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
- * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
- * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
- *)
+(*let the application first call the config to get the session
+then call the add function to put some data----->*change*------>calling the config from
+inside AO module so that it can be made available to add function.----------> creating empty
+config in traditional way. In place of creating map as in irmin-mem, creating session 
+and returning it as t.
+
+the return type of the add function has to be of key type. So choosing some digest function
+to generate the key.
+not able to make key out of uuid. so, moving forward by digesting the value itself.
+
+Assumption:
+There is already a table with <choose a name> name in <choose a name> keyspace
+generate a uuid which will act as primary key. take values from the user as a tuple.*)
 
 open Lwt.Infix
-(* ------------------------------ *)
+
+let src = Logs.Src.create "irmin.mem" ~doc:"Irmin in-memory store"
+module Log = (val Logs.src_log src : Logs.LOG)
+
 type cassSession
 type cassStatement
 type cassCluster
 type uuid
 type cassFuture  
-type cassError = Failure | Success
+type cassError
 type cassUuid
 type cassUuidGen
 type stubtype
-type valuestr
 
 external ml_cass_session_new : unit -> cassSession = "cass_session_new"
 external ml_cass_cluster_new : unit -> cassCluster = "cass_cluster_new"
-external ml_cass_cluster_set_contact_points : cassCluster -> string -> unit = "cass_cluster_set_contact_points"
-external ml_cass_uuid_gen_new : unit -> uuid = "cass_uuid_gen_new"
+external ml_cass_cluster_set_contact_points : cassCluster -> string -> unit = 
+                              "cass_cluster_set_contact_points"
+external ml_cass_session_connect : cassSession -> cassCluster -> cassFuture =
+                              "cass_session_connect"                             
+external ml_cass_future_wait : cassFuture -> unit = "cass_future_wait"
+external ml_cass_future_error_code : cassFuture -> cassError = "cass_future_error_code"
+external cstub_match_enum : cassError -> cassFuture -> bool = "match_enum"
 external ml_cass_cluster_free : cassCluster -> unit = "cass_cluster_free"
 external ml_cass_session_free : cassSession -> unit = "cass_session_free"
-external ml_cass_uuid_gen_free : uuid -> unit = "cass_uuid_gen_free"
+external ml_cass_statement_new : string -> int -> cassStatement = "cass_statement_new"
+external ml_cass_session_execute : cassSession -> cassStatement -> cassFuture = "cass_session_execute"
+external ml_cass_future_free : cassFuture -> unit = "cass_future_free"
+external ml_cass_statement_free : cassStatement -> unit = "cass_statement_free"
+external ml_cass_uuid_gen_new : unit -> cassUuidGen = "cass_uuid_gen_new"
+external ml_cass_uuid_gen_free : cassUuidGen -> unit = "cass_uuid_gen_free"
 
-external cstub_cass_future_error_message: cassFuture -> unit = "cstub_cass_future_error_message"
-external cstub_connect_session : cassSession -> cassCluster -> int = "cstub_connect_session"
-external cstub_execute_query : cassSession -> string -> cassError = "cstub_execute_query"
-external cstub_insert_into_tuple : cassSession -> uuid -> cassError = "cstub_insert_into_tuple"
-external cstub_select_from_tuple : cassSession -> cassError = "cstub_select_from_tuple"
-(* ------------------------------ *)
+external cstub_convert : int -> int = "convert"
 
-
-let src = Logs.Src.create "irmin.mem" ~doc:"Irmin in-memory store"
-module Log = (val Logs.src_log src : Logs.LOG)
-
-module RO (K: Irmin.Contents.Conv) (V: Irmin.Contents.Conv) = struct
-
-  module KMap = Map.Make(struct
-      type t = K.t
-      let compare = Irmin.Type.compare K.t
-    end)
-
-  type key = K.t
-  type value = V.t
-  type t = { mutable t: value KMap.t }
-  let map = { t = KMap.empty }
-  let v _config = Lwt.return map
-
-  let find { t; _ } key =
-    Log.debug (fun f -> f "find %a" K.pp key);
-    try Lwt.return (Some (KMap.find key t))
-    with Not_found -> Lwt.return_none
-
-  let mem { t; _ } key =
-    Log.debug (fun f -> f "mem %a" K.pp key);
-    Lwt.return (KMap.mem key t)
-
-end
-
-(* ------------------------------ *)
-
+let config () = Irmin.Private.Conf.empty
 
 let create_cluster hosts = 
   (* let cstub_create_cluster hosts *)
@@ -80,44 +56,69 @@ let create_cluster hosts =
     ml_cass_cluster_set_contact_points cluster hosts;
     cluster
 
-let execute_query session query = 
-  cstub_execute_query session query
-  
+let connect_session sess cluster = 
+  let future = ml_cass_session_connect sess cluster in
+  ml_cass_future_wait future ;
+  let rc = ml_cass_future_error_code future in 
+  let response = cstub_match_enum rc future in 
+    response
 
-let print_error future =
-  cstub_cass_future_error_message future
-
-
-let connect_session session cluster = 
-  cstub_connect_session session cluster
-
-
-
-let cassAdd value =
-  let sess = ml_cass_session_new () in 
-    let hosts = "127.0.0.1" in 
-    let cluster = create_cluster hosts in
-    let uuid_gen = ml_cass_uuid_gen_new () in 
- 
-    let response = connect_session sess cluster in
-      (* if response == 2 then begin
-        ml_cass_cluster_free cluster;
-        ml_cass_session_free sess
-      end; *)
+let execute_query sess query =
+  let v = cstub_convert 0 in 
+  let statement = ml_cass_statement_new query v in
+  let future = ml_cass_session_execute sess statement in
+    ml_cass_future_wait future;
     
-  execute_query sess "CREATE KEYSPACE examples WITH replication = {'class': 'SimpleStrategy', 'replication_factor': '3' }";
-    execute_query sess "CREATE TABLE examples.tuples (id timeuuid, item frozen<tuple<text, bigint>>, PRIMARY KEY(id))";
+    let rc = ml_cass_future_error_code future in 
+    let response = cstub_match_enum rc future in
+      ml_cass_future_free future;
+      ml_cass_statement_free statement;
 
-    (* cstub_insert_into_tuple sess uuid_gen; *)
-    cstub_insert_into_tuple sess uuid_gen;
-    cstub_select_from_tuple sess;
+    response
 
-    ml_cass_cluster_free cluster;
-    ml_cass_session_free sess;
+(*  *)
 
-    ml_cass_uuid_gen_free uuid_gen
+module RO (K: Irmin.Contents.Conv) (V: Irmin.Contents.Conv) = struct
 
-(* ------------------------------ *)
+  (* module KMap = Map.Make(struct
+      type t = K.t
+      let compare = Irmin.Type.compare K.t
+    end) *)
+
+  type key = K.t
+  type value = V.t
+  type t = cassSession (* { mutable t: value KMap.t } *)
+  (* let map = { t = KMap.empty } *)
+  (* let v _config = Lwt.return map *)
+
+  let v _config = 
+    let sess = ml_cass_session_new () in 
+      let hosts = "127.0.0.1" in 
+      let cluster = create_cluster hosts in   
+      let response = connect_session sess cluster in 
+      match response with 
+      | false -> (print_string "\nSession connection failed\n";
+                  ml_cass_cluster_free cluster;
+                  ml_cass_session_free sess;
+                (* (response, sess) *)
+              Lwt.return sess)
+      | true -> print_string "\nSession is connected\n";
+
+      (* (response, sess) *)
+      Lwt.return sess
+
+  (* let find { t; _ } key = *)
+  let find t key = Lwt.return_none
+    (* Log.debug (fun f -> f "find %a" K.pp key); *)
+    (* try Lwt.return (Some (true))
+    with Not_found -> Lwt.return_none *)
+
+  (* let mem { t; _ } key = *)
+  let mem t key = Lwt.return true
+    (* Log.debug (fun f -> f "mem %a" K.pp key); *)
+    (* Lwt.return (KMap.mem key t) *)
+
+end
 
 
 
@@ -126,27 +127,35 @@ module AO (K: Irmin.Hash.S) (V: Irmin.Contents.Conv) = struct
   include RO(K)(V)
 
   let add t value =
-  (* ------------------------------ *)
+    let cstruct = Irmin.Type.encode_cstruct V.t value in 
+    let str = Cstruct.to_string cstruct in 
+    let str = String.sub str 8 ((String.length str) - 8) in
+    let strList = String.split_on_char ' ' str in
+    let strArr = Array.of_list strList in
+    let empid, name, dept = Array.get strArr 0, Array.get strArr 1, Array.get strArr 2 in 
+  
 
-   cassAdd value;
-   (* ------------------------------ *)
+    (* let uuid_gen = ml_cass_uuid_gen_new () in *)
+    (* let uuid_key = K.digest cassUuidGen uuid_gen in *)
 
-    print_endline "\ncall from module\n";
-    let key = K.digest V.t value in
-    Log.debug (fun f -> f "add -> %a" K.pp key);
-    t.t <- KMap.add key value t.t;
+    let key = K.digest V.t value in (*add key to the table in the query*)
+                                    (*if we want to avoid calculating hash, we
+                                    need to write our own hash function*)
+        
+    let insquery = "INSERT INTO employee.office (empid, Name, Department) VALUES 
+                  ("
+                   ^ empid 
+                   ^ " , " 
+                   ^ "\'" ^ name ^ "\'" 
+                   ^ " , " 
+                   ^ "\'" ^ dept ^ "\'"  
+                   ^ ")" in
+
+    let insqueryStatus = execute_query t insquery in   (*changed sess to t*)
+
+    (* ml_cass_uuid_gen_free uuid_gen; *)
+
     Lwt.return key
-
-end
-
-module Link (K: Irmin.Hash.S) = struct
-
-  include RO(K)(K)
-
-  let add t index key =
-    Log.debug (fun f -> f "add link");
-    t.t <- KMap.add index key t.t;
-    Lwt.return_unit
 
 end
 
@@ -156,7 +165,7 @@ module RW (K: Irmin.Contents.Conv) (V: Irmin.Contents.Conv) = struct
   module W = Irmin.Private.Watch.Make(K)(V)
   module L = Irmin.Private.Lock.Make(K)
 
-  type t = { t: RO.t; w: W.t; lock: L.t }
+  type t = { t: cassSession; w: W.t; lock: L.t }
   type key = RO.key
   type value = RO.value
   type watch = W.watch
@@ -176,28 +185,45 @@ module RW (K: Irmin.Contents.Conv) (V: Irmin.Contents.Conv) = struct
 
   let list t =
     Log.debug (fun f -> f "list");
-    RO.KMap.fold (fun k _ acc -> k :: acc) t.t.RO.t []
+    (* RO.KMap.fold (fun k _ acc -> k :: acc) t.t.RO.t *) []
     |> Lwt.return
 
   let set t key value =
-    Log.debug (fun f -> f "update");
-    L.with_lock t.lock key (fun () ->
-        t.t.RO.t <- RO.KMap.add key value t.t.RO.t;
-        Lwt.return_unit
-      ) >>= fun () ->
-    W.notify t.w key (Some value)
+    let cstruct = Irmin.Type.encode_cstruct V.t value in 
+    let str = Cstruct.to_string cstruct in 
+    print_string str;
+    let value = String.sub str 8 ((String.length str) - 8) in
+    print_string value;
+    
+    let cstruct = Irmin.Type.encode_cstruct K.t key in 
+    let str = Cstruct.to_string cstruct in 
+    let key = String.sub str 8 ((String.length str) - 8) in
+    
+
+
+    let insquery = "INSERT INTO employee.empmap (key, value) VALUES 
+                  ("
+                   ^ "\'" ^ key ^ "\'" 
+                   ^ " , " 
+                   ^ "\'" ^ value ^ "\'"  
+                   ^ ")" in
+     let insqueryStatus = execute_query t.t insquery in 
+     
+     Lwt.return_unit 
 
   let remove t key =
     Log.debug (fun f -> f "remove");
     L.with_lock t.lock key (fun () ->
-        t.t.RO.t <- RO.KMap.remove key t.t.RO.t ;
+        (* t.t.RO.t <- RO.KMap.remove key t.t.RO.t ; *)
         Lwt.return_unit
       ) >>= fun () ->
     W.notify t.w key None
 
   let test_and_set t key ~test ~set =
     Log.debug (fun f -> f "test_and_set");
-    L.with_lock t.lock key (fun () ->
+    (* cassCondAdd set; *)
+    
+    (* L.with_lock t.lock key (fun () ->
         find t key >>= fun v ->
         if Irmin.Type.(equal (option V.t)) test v then (
           let () = match set with
@@ -209,19 +235,91 @@ module RW (K: Irmin.Contents.Conv) (V: Irmin.Contents.Conv) = struct
           Lwt.return false
       ) >>= fun updated ->
     (if updated then W.notify t.w key set else Lwt.return_unit) >>= fun () ->
-    Lwt.return updated
+    Lwt.return updated *)
+    Lwt.return true
 
+
+
+
+
+
+
+  (* module RO = RO(K)(V)
+  module W = Irmin.Private.Watch.Make(K)(V)
+
+  type t = cassSession
+  type key = RO.key
+  type value = RO.value
+  type watch = W.watch
+
+  let watches = W.v ()
+
+  let test_and_set t key ~test ~set = Lwt.return true
+  let remove t key = Lwt.return_unit 
+  let list t = Lwt.return []
+
+  let unwatch t = ()
+  let watch t = W.watch t
+  let watch_key t = ()  
+  let mem t = RO.mem t      
+  let find t = RO.find t  
+
+  let v config = 
+    let sess = ml_cass_session_new () in 
+      let hosts = "127.0.0.1" in 
+      let cluster = create_cluster hosts in   
+      let response = connect_session sess cluster in 
+      match response with 
+      | false -> (print_string "\nSession connection failed\n";
+                  ml_cass_cluster_free cluster;
+                  ml_cass_session_free sess;
+                (* (response, sess) *)
+              Lwt.return sess)
+      | true -> print_string "\nSession is connected\n";
+
+      (* (response, sess) *)
+      Lwt.return sess
+
+(* key will be branch name and value will be the key got from AO *)
+  let set t key value = 
+    (* let insquery = "INSERT INTO employee.empmap (key, value) VALUES 
+                  ("
+                   ^ "\'" ^ key ^ "\'" 
+                   ^ " , " 
+                   ^ "\'" ^ value ^ "\'"  
+                   ^ ")" in
+     let insqueryStatus = execute_query t insquery in *)
+     
+     Lwt.return_unit   
+ *)
+  
+  
 end
 
-let config () = Irmin.Private.Conf.empty
-  
+(* let config () = 
+  let sess = ml_cass_session_new () in 
+    let hosts = "127.0.0.1" in 
+    let cluster = create_cluster hosts in   
+    let response = connect_session sess cluster in 
+    match response with 
+    | false -> (print_string "\nSession connection failed\n";
+                ml_cass_cluster_free cluster;
+                ml_cass_session_free sess;
+              (response, sess))
+    | true -> print_string "\nSession is connected\n";
 
-module Make = Irmin.Make(AO)(RW)
+    (response, sess)
+ *)
 
-module KV (C: Irmin.Contents.S) =
-  Make
-    (Irmin.Metadata.None)
-    (C)
-    (Irmin.Path.String_list)
-    (Irmin.Branch.String)
-    (Irmin.Hash.SHA1)
+
+  (* (* ------------------------------ *)
+
+   cassAdd value;
+   (* ------------------------------ *)
+
+    print_endline "\ncall from module\n";
+    let key = K.digest V.t value in
+    Log.debug (fun f -> f "add -> %a" K.pp key);
+    t.t <- KMap.add key value t.t;
+    Lwt.return key *)
+
