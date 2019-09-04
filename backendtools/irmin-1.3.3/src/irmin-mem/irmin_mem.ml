@@ -142,6 +142,7 @@ module AO (K: Irmin.Hash.S) (V: Irmin.Contents.Conv) = struct
                                     (*if we want to avoid calculating hash, we
                                     need to write our own hash function*)
         
+    
     let insquery = "INSERT INTO employee.office (empid, Name, Department) VALUES 
                   ("
                    ^ empid 
