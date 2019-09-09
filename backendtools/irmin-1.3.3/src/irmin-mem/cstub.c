@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include <caml/memory.h>
+#include <caml/alloc.h>
 
 #include "cassandra.h"
 
@@ -32,3 +33,27 @@ CAMLprim value match_enum(value rc, value future){
  	CAMLreturn(Int_val(val));
  }
 
+ CAMLprim value convert_to_bool(value val){
+  CAMLparam1(val);
+  // printf ("\nvalue received is : %d\n", val);
+  if (val == 1){
+    CAMLreturn (Val_int(1));
+  }else{
+    CAMLreturn(Val_int(0));
+  }
+ }
+
+CAMLprim value get_string(value val){
+  
+  CAMLparam1(val);
+  CAMLlocal1(var_value);
+  char* text;
+  size_t text_length;
+
+  cass_value_get_string(val, &text, &text_length);
+
+  var_value = caml_copy_string(text);
+  
+  CAMLreturn(var_value);
+  // // CAMLreturn("sdf");
+ }
