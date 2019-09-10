@@ -82,6 +82,40 @@ let execute_query sess query =
 
     response
 
+let tns_stmt session query keyStr testStr setStr =
+  let valCount = cstub_convert 3 in
+
+    let statement = ml_cass_statement_new query valCount in 
+      ml_cass_statement_bind_string statement (cstub_convert 0) setStr;  (*key and value are converted into string*)
+      ml_cass_statement_bind_string statement (cstub_convert 1) keyStr;
+      ml_cass_statement_bind_string statement (cstub_convert 2) testStr;
+
+    let future = ml_cass_session_execute session statement in
+      ml_cass_future_wait future;
+
+    let rc = ml_cass_future_error_code future in 
+    let response = cstub_match_enum rc future in 
+
+      ml_cass_future_free future;
+      ml_cass_statement_free statement;
+response
+
+let del_stmt session query keyStr =
+  let valCount = cstub_convert 1 in
+
+    let statement = ml_cass_statement_new query valCount in 
+      ml_cass_statement_bind_string statement (cstub_convert 0) keyStr;  (*key and value are converted into string*)
+      
+    let future = ml_cass_session_execute session statement in
+      ml_cass_future_wait future;
+
+    let rc = ml_cass_future_error_code future in 
+    let response = cstub_match_enum rc future in 
+
+      ml_cass_future_free future;
+      ml_cass_statement_free statement;
+    response
+
 let cx_stmt session query keyStr valStr =
   let valCount = cstub_convert 2 in
 
@@ -97,6 +131,9 @@ let cx_stmt session query keyStr valStr =
 
       ml_cass_future_free future;
       ml_cass_statement_free statement;
+
+    response 
+    
 
 
 module RO (K: Irmin.Contents.Conv) (V: Irmin.Contents.Conv) = struct
@@ -245,11 +282,67 @@ module RW (K: Irmin.Contents.Conv) (V: Irmin.Contents.Conv) = struct
       ) >>= fun () ->
     W.notify t.w key None
 
-  let test_and_set t key ~test ~set =
+  let test_and_set t key ~test ~set:s =
     Log.debug (fun f -> f "test_and_set");
 
+
+    let keycs = Irmin.Type.encode_cstruct K.t key in 
+    let keyStr = Cstruct.to_string keycs in 
+    let keyStr = String.sub keyStr 8 ((String.length keyStr) - 8) in
+
+    let testStr = match test with 
+    |Some x -> (
+            let testcs = Irmin.Type.encode_cstruct V.t x in 
+            let testStr = Cstruct.to_string testcs in 
+            String.sub testStr 8 ((String.length testStr) - 8) )
+    |None -> ""  in
+
+    let setStr = match s with 
+    |Some x -> (
+            let testcs = Irmin.Type.encode_cstruct V.t x in 
+            let testStr = Cstruct.to_string testcs in 
+            String.sub testStr 8 ((String.length testStr) - 8) )
+    |None -> ""  in
+
+
+    let tns = match setStr with 
+    | "" -> (
+          let query = "DELETE from employee.empmap WHERE key = ?" in
+          let response = del_stmt t.t query keyStr in
+
+          if response = true then 
+              Lwt.return true
+          else
+              Lwt.return false
+
+      )
+    | _ -> (
+          let query = "UPDATE employee.empmap SET value = ? WHERE key = ? IF value = ?" in
+          let response = tns_stmt t.t query keyStr testStr setStr in
+
+          if response = true then 
+              Lwt.return true
+          else
+              Lwt.return false
+
+      ) in
+
+    tns
+
+
+
+
+    (* print_string ("\nkeystr = " ^ keyStr ^ "\n teststr = " ^ testStr 
+                                  ^ "\n setstr = " ^ setStr) ;
+    print_int (String.length testStr);
+    print_int (String.length setStr);
+
+
+
+    Lwt.return false *)
+
     (*since test has some extra length compared to what find returns*)
-    let subtest = match test with 
+   (*  let subtest = match test with 
             | Some key -> (
                     let cstruct = Irmin.Type.encode_cstruct V.t key in
                     let keyStr = Cstruct.to_string cstruct in 
@@ -273,10 +366,22 @@ module RW (K: Irmin.Contents.Conv) (V: Irmin.Contents.Conv) = struct
           
       if Irmin.Type.(equal (option V.t)) test v then (
         print_string "\ninside true\n";
+        (* match s with 
+        | None -> (let keycs = Irmin.Type.encode_cstruct K.t key in 
+                    let keyStr = Cstruct.to_string keycs in 
+                    let keyStr = String.sub keyStr 8 ((String.length keyStr) - 8) in
+
+                    let query = "delete from empmap where key = '" ^ dummy ^ "'" in
+
+
+  ) *)
+
+
+
         Lwt.return true
       )else(
         print_string "\ninside false\n";
-        Lwt.return false)
+        Lwt.return false) *)
 
 end
 

@@ -55,5 +55,4 @@ CAMLprim value get_string(value val){
   var_value = caml_copy_string(text);
   
   CAMLreturn(var_value);
-  // // CAMLreturn("sdf");
  }
