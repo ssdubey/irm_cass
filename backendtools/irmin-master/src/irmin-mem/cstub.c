@@ -57,6 +57,8 @@ CAMLprim value get_string(value val){
 
   cass_value_get_string((const CassValue*)val, &text, &text_length);
   // printf ("\nin c: %s", text);
+  // cass_value_get_string((const CassValue*)val, &text, &text_length);
+  // printf ("\nin c: %s", text);
   var_value = caml_copy_string(text);
   
   CAMLreturn(var_value);
