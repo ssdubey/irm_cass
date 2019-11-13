@@ -43,7 +43,7 @@ let random_ascii () =
   let chars = "0123456789abcdefghijklmnopqrstABCDEFGHIJKLMNOPQRST-_." in
   chars.[Random.int @@ String.length chars]
 
-let random_string n = String.init n (fun _i -> random_ascii ()) 
+let random_string n = String.init n (fun _i -> random_ascii ())
 
 let long_random_string = random_string (* 1024_000 *) 10
 
@@ -191,7 +191,7 @@ module Make (S : S) = struct
       let check_val = check (T.option S.contents_t) in
       kv2 ~repo >>= fun kv2 ->
       with_contents repo (fun t -> P.Contents.add t v2) >>= fun k2' ->
-      check_key "kv2" kv2 k2'; 
+      check_key "kv2" kv2 k2';
       P.Contents.find t k2' >>= fun v2' ->
       check_val "v2" (Some v2) v2';
       with_contents repo (fun t -> P.Contents.add t v2) >>= fun k2'' ->
@@ -1043,11 +1043,9 @@ module Make (S : S) = struct
       Alcotest.(check ff) "ff 2.2" (Ok ()) b3;
       S.Head.get t12 >>= fun c14' ->
       check (S.commit_t repo) "ff 2.3" c14 c14';
-      (* Lwt.return_unit *)
-      S.Repo.close repo
+      Lwt.return_unit
     in
     run x test
-
 
   let test_empty x () =
     let test repo =
@@ -1058,8 +1056,7 @@ module Make (S : S) = struct
       S.set_exn t ~info:Irmin.Info.none [ "b"; "x" ] v1 >>= fun () ->
       S.Head.find t >>= fun h ->
       check T.(option @@ S.commit_t repo) "not empty" (Some r1) h;
-      (* Lwt.return_unit *)
-      S.Repo.close repo
+      Lwt.return_unit
     in
     run x test
 
@@ -1078,14 +1075,12 @@ module Make (S : S) = struct
         | Error (`Msg e) -> Alcotest.failf "decoding error: %s" e
       in
       check P.Slice.t "slices" slice slice';
-      (* Lwt.return_unit *)
-      S.Repo.close repo
+      Lwt.return_unit
     in
     run x test
 
   let test_private_nodes x () =
     let test repo =
-    print_string "\nthis is test_private_nodes\n";
       let check_val = check T.(option S.contents_t) in
       let vx = "VX" in
       let vy = "VY" in
@@ -1107,8 +1102,7 @@ module Make (S : S) = struct
       check_val "vy after merge" (Some vy) vy';
       S.find t [ "u"; "x"; "z" ] >>= fun vx' ->
       check_val "vx after merge" (Some vx) vx';
-      S.Repo.close repo
-      (* Lwt.return_unit *)
+      Lwt.return_unit
     in
     run x test
 
@@ -1271,9 +1265,7 @@ module Make (S : S) = struct
       S.Tree.add v0 [ "c"; "d" ] yyy >>= fun v0 ->
       S.Tree.add v0 [ "c"; "e"; "f" ] zzz >>= fun v0 ->
       Alcotest.(check inspect) "inspect" (`Node `Value) (S.Tree.inspect v0);
-      S.set_tree_exn ~info t1 [] v0 >>= fun () -> 
-      (* Lwt.return_unit *)
-      S.Repo.close repo
+      S.set_tree_exn ~info t1 [] v0 >>= fun () -> Lwt.return_unit
     in
     run x test
 
@@ -1481,8 +1473,7 @@ module Make (S : S) = struct
       >>= fun () ->
       S.find_all t [ "a" ] >>= fun vx' ->
       check_val "update file as tree" (normal vx) vx';
-      (* Lwt.return_unit *)
-      S.Repo.close repo
+      Lwt.return_unit
     in
     run x test
 
@@ -1531,8 +1522,7 @@ module Make (S : S) = struct
       S.Head.set t2 r2 >>= fun () ->
       S.mem t2 [ "a"; "d" ] >>= fun b4 ->
       Alcotest.(check bool) "mem-ad" false b4;
-      (* Lwt.return_unit *)
-      S.Repo.close repo
+      Lwt.return_unit
     in
     run x test
 
@@ -1552,7 +1542,6 @@ module Make (S : S) = struct
 
   let test_merge x () =
     let test repo =
-    print_string "\nthis is test_merge\n";
       let v1 = "X1" in
       let v2 = "X2" in
       let v3 = "X3" in
@@ -1583,7 +1572,6 @@ module Make (S : S) = struct
       check S.contents_t "v2" v2 v2';
       check S.contents_t "v3" v3 v3';
       Lwt.return_unit
-      (* S.Repo.close repo *)
     in
     run x test
 
@@ -1595,7 +1583,7 @@ module Make (S : S) = struct
     S.set_exn foo ~info:(infof "update foo:a") [ "a" ] v1 >>= fun () ->
     S.set_exn bar ~info:(infof "update bar:b") [ "b" ] v1 >>= fun () ->
     S.merge_into ~info:(infof "merge bar into foo") bar ~into:foo
-    >>= merge_exn "merge unrelated" >>= fun () -> S.Repo.close repo
+    >>= merge_exn "merge unrelated"
 
   let rec write fn = function
     | 0 -> []
@@ -1609,7 +1597,6 @@ module Make (S : S) = struct
 
   let test_concurrent_low x () =
     let test_branches repo =
-    print_string "\nthis is test_concurrent_low\n";
       let k = b1 in
       r1 ~repo >>= fun v ->
       let write = write (fun _i -> S.Branch.set repo k v) in
@@ -1636,8 +1623,7 @@ module Make (S : S) = struct
           (fun i -> check S.contents_t (Fmt.strf "contents %d" i) v)
       in
       perform (write 1) >>= fun () ->
-      perform (write 10 @ read 10 @ write 10 @ read 10) 
-      (* >>= fun () -> P.Repo.close repo *)
+      perform (write 10 @ read 10 @ write 10 @ read 10)
     in
     run x (fun repo -> Lwt.choose [ test_branches repo; test_contents repo ])
 
@@ -1672,7 +1658,6 @@ module Make (S : S) = struct
           (fun i -> check S.contents_t (Fmt.strf "update: multi %d" i) (v i))
       in
       perform (write t1 10 @ write t2 10) >>= fun () -> perform (read t1 10)
-      >>= fun () -> S.Repo.close repo
     in
     run x (fun repo ->
         test_one repo >>= fun () ->
@@ -1680,7 +1665,6 @@ module Make (S : S) = struct
 
   let test_concurrent_merges x () =
     let test repo =
-    print_string "\nthis is test_concurrent_merges\n";
       let k i = [ "a"; "b"; "c"; string_of_int i ] in
       let v i = Fmt.strf "X%d" i in
       S.master repo >>= fun t1 ->
@@ -1701,7 +1685,7 @@ module Make (S : S) = struct
       in
       S.set_exn t1 ~info:(infof "update") (k 0) (v 0) >>= fun () ->
       perform (write t1 1 10 @ write t2 2 10) >>= fun () ->
-      perform (read t1 10) >>= fun () -> S.Repo.close repo
+      perform (read t1 10)
     in
     run x test
 
@@ -1711,7 +1695,6 @@ module Make (S : S) = struct
 
   let test_with_tree x () =
     let test repo =
-    print_string "\nthis is test_with_tree\n";
       S.master repo >>= fun t ->
       let update ?retries key strategy r w =
         S.with_tree t ?retries ~info:(infof "with-tree") ~strategy key
@@ -1818,14 +1801,12 @@ module Make (S : S) = struct
               Alcotest.(check string) "merge z" a "4" );
           ]
       in
-      set () >>= test_and_set >>= merge 
-      >>= fun () -> S.Repo.close repo
+      set () >>= test_and_set >>= merge
     in
     run x test
 
   let test_concurrent_head_updates x () =
     let test repo =
-      print_string "\nrun test\n";
       let k i = [ "a"; "b"; "c"; string_of_int i ] in
       let v i = Fmt.strf "X%d" i in
       S.master repo >>= fun t1 ->
@@ -1843,12 +1824,10 @@ module Make (S : S) = struct
         aux 1
       in
       let write t n =
-      print_string "\nrun write\n";
         write (fun i ->
             retry i (fun () ->
                 S.Head.find t >>= fun test ->
                 let tag = Fmt.strf "tmp-%d-%d" n i in
-                print_string ("\ntag in write: " ^ tag);
                 S.clone ~src:t ~dst:tag >>= fun m ->
                 S.set_exn m ~info:(infof "update") (k i) (v i) >>= fun () ->
                 S.Head.find m >>= fun set ->
@@ -1856,14 +1835,12 @@ module Make (S : S) = struct
                 S.Head.test_and_set t ~test ~set))
       in
       let read t =
-      print_string "\nrun read\n";
         read
           (fun i -> S.get t (k i))
           (fun i -> check S.contents_t (Fmt.strf "update: multi %d" i) (v i))
       in
       S.set_exn t1 ~info:(infof "update") (k 0) (v 0) >>= fun () ->
       perform (write t1 1 5 @ write t2 2 5) >>= fun () -> perform (read t1 5)
-      >>= fun () -> S.Repo.close repo
     in
     run x test
 
@@ -1894,8 +1871,7 @@ module Make (S : S) = struct
       S.set_tree_exn t [ "3" ] ~parents:[ commit ] tree_3 ~info >>= fun () ->
       S.find_tree t [ "1" ] >>= fun t1 ->
       Alcotest.(check (option tree_t)) "shallow tree" (Some tree_1) t1;
-      (* Lwt.return_unit *)
-      S.Repo.close repo
+      Lwt.return_unit
     in
     run x test
 end
@@ -1905,7 +1881,6 @@ let suite (speed, x) =
   let module T = Make (S) in
   ( x.name,
     [
-      (*watch related tests are removed*)
       ("Basic operations on contents", speed, T.test_contents x);
       ("Basic operations on nodes", speed, T.test_nodes x);
       ("Basic operations on commits", speed, T.test_commits x);
@@ -1915,7 +1890,7 @@ let suite (speed, x) =
       ("Tree caches and hashconsing", speed, T.test_tree_caches x);
       ("Complex histories", speed, T.test_history x);
       ("Empty stores", speed, T.test_empty x);
-      ("Private node manipulation", speed, T.test_private_nodes x);
+      (* ("Private node manipulation", speed, T.test_private_nodes x);
       ("High-level store operations", speed, T.test_stores x);
       ("High-level operations on trees", speed, T.test_trees x);
       ("High-level store synchronisation", speed, T.test_sync x);
@@ -1927,9 +1902,12 @@ let suite (speed, x) =
       ("Concurrent head updates", speed, T.test_concurrent_head_updates x);
       ("Concurrent merges", speed, T.test_concurrent_merges x);
       ("Shallow objects", speed, T.test_shallow_objects x);
-      ("Close a repo, keep another open", speed, T.test_two_close x);
-      
+      ("Close a repo, keep another open", speed, T.test_two_close x); *)
+
+      (* ("Watch callbacks and exceptions", speed, T.test_watch_exn x);
+      ("Basic operations on watches", speed, T.test_watches x); *)
     ] )
+
 let run name ~misc tl =
   let tl = List.map suite tl in
   Alcotest.run name (tl @ misc)
